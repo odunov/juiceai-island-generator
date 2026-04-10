@@ -247,6 +247,72 @@ namespace Islands.EditorTools
             return new IslandMeshBuildResult(BuildMesh(topSurface, terraceBoundaries, depth, terraceDepthBias));
         }
 
+        public static bool TryBuildTopPolygon(
+            Spline spline,
+            IslandMeshBuildSettings settings,
+            out List<Vector2> polygon,
+            out string validationMessage)
+        {
+            if (spline == null)
+            {
+                polygon = null;
+                validationMessage = "Island shape is missing a spline.";
+                return false;
+            }
+
+            if (!spline.Closed)
+            {
+                polygon = null;
+                validationMessage = "Close the spline loop before generating an island mesh.";
+                return false;
+            }
+
+            if (spline.Count < 3)
+            {
+                polygon = null;
+                validationMessage = "An island needs at least three knots.";
+                return false;
+            }
+
+            var spacing = Mathf.Max(settings.Spacing, 0.01f);
+            var minimumArea = Mathf.Max(settings.MinimumArea, 0.0001f);
+            var duplicatePointTolerance = Mathf.Max(settings.DuplicatePointTolerance, 0.0001f);
+            var collinearTolerance = GetCollinearTolerance(spacing);
+            var validationTolerance = GetValidationTolerance(collinearTolerance, spacing);
+
+            if (!TryBuildValidatedPolygonFromSpline(
+                    spline,
+                    spacing,
+                    duplicatePointTolerance,
+                    collinearTolerance,
+                    validationTolerance,
+                    minimumArea,
+                    out var basePolygon,
+                    out validationMessage))
+            {
+                polygon = null;
+                return false;
+            }
+
+            if (!TryBuildDetailPolygon(
+                    basePolygon,
+                    settings.EdgeZones,
+                    duplicatePointTolerance,
+                    collinearTolerance,
+                    validationTolerance,
+                    minimumArea,
+                    out var detailPolygon,
+                    out validationMessage))
+            {
+                polygon = null;
+                return false;
+            }
+
+            polygon = ResamplePolygon(detailPolygon, Mathf.Max(3, detailPolygon.Count));
+            validationMessage = string.Empty;
+            return true;
+        }
+
         private static bool TryBuildValidatedPolygonFromSpline(
             Spline spline,
             float spacing,

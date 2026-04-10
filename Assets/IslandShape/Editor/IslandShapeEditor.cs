@@ -18,6 +18,7 @@ namespace Islands.EditorTools
         private SerializedProperty terraceSoftnessProperty;
         private SerializedProperty spacingProperty;
         private SerializedProperty coastBandWidthProperty;
+        private SerializedProperty linkedWaterProperty;
         private SerializedProperty generateColliderProperty;
         private SerializedProperty minimumAreaProperty;
         private SerializedProperty duplicatePointToleranceProperty;
@@ -32,6 +33,7 @@ namespace Islands.EditorTools
             terraceSoftnessProperty = serializedObject.FindProperty("terraceSoftness");
             spacingProperty = serializedObject.FindProperty("spacing");
             coastBandWidthProperty = serializedObject.FindProperty("coastBandWidth");
+            linkedWaterProperty = serializedObject.FindProperty("linkedWater");
             generateColliderProperty = serializedObject.FindProperty("generateCollider");
             minimumAreaProperty = serializedObject.FindProperty("minimumArea");
             duplicatePointToleranceProperty = serializedObject.FindProperty("duplicatePointTolerance");
@@ -55,6 +57,8 @@ namespace Islands.EditorTools
 
             EditorGUILayout.Space();
             DrawMeshSettings();
+            EditorGUILayout.Space();
+            DrawWaterSettings();
         }
 
         private void DrawScriptReference()
@@ -87,6 +91,28 @@ namespace Islands.EditorTools
                 EditorGUILayout.PropertyField(generateColliderProperty);
                 EditorGUILayout.PropertyField(minimumAreaProperty);
                 EditorGUILayout.PropertyField(duplicatePointToleranceProperty);
+
+                serializedObject.ApplyModifiedProperties();
+
+                if (changed.changed)
+                {
+                    foreach (var targetObject in targets.Cast<IslandShape>())
+                    {
+                        targetObject.RebuildImmediate();
+                        EditorUtility.SetDirty(targetObject);
+                    }
+                }
+            }
+        }
+
+        private void DrawWaterSettings()
+        {
+            EditorGUILayout.LabelField("Water", EditorStyles.boldLabel);
+            using (var changed = new EditorGUI.ChangeCheckScope())
+            {
+                EditorGUILayout.PropertyField(
+                    linkedWaterProperty,
+                    new GUIContent("Linked Water", "Optional IslandWater component to notify whenever this island mesh changes."));
 
                 serializedObject.ApplyModifiedProperties();
 

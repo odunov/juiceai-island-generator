@@ -241,6 +241,9 @@ namespace Islands.EditorTools
         private List<IslandEdgeZone> edgeZones = new List<IslandEdgeZone>();
 
         [SerializeField]
+        private IslandWater linkedWater;
+
+        [SerializeField]
         [HideInInspector]
         private bool isDrawing;
 
@@ -299,6 +302,8 @@ namespace Islands.EditorTools
         public float DuplicatePointTolerance => duplicatePointTolerance;
 
         public IReadOnlyList<IslandEdgeZone> EdgeZones => edgeZones;
+
+        public IslandWater LinkedWater => linkedWater;
 
         public bool IsDrawing => isDrawing;
 
@@ -657,6 +662,11 @@ namespace Islands.EditorTools
             RebuildImmediate();
         }
 
+        public bool TryGetResolvedTopPolygon(out List<Vector2> polygon)
+        {
+            return IslandMeshBuilder.TryBuildTopPolygon(Spline, BuildSettings, out polygon, out _);
+        }
+
         public void RebuildImmediate()
         {
             EnsureSetup();
@@ -668,6 +678,7 @@ namespace Islands.EditorTools
             {
                 lastValidationMessage = string.Empty;
                 ClearMesh();
+                NotifyWater();
                 return;
             }
 
@@ -677,11 +688,13 @@ namespace Islands.EditorTools
             if (!buildResult.Succeeded)
             {
                 ClearMesh();
+                NotifyWater();
                 return;
             }
 
             ApplyMesh(buildResult.MeshData);
             UpdateColliderMesh();
+            NotifyWater();
         }
 
         public bool OwnsSpline(Spline spline)
@@ -759,6 +772,14 @@ namespace Islands.EditorTools
             meshCollider.enabled = true;
             meshCollider.sharedMesh = null;
             meshCollider.sharedMesh = generatedMesh != null && generatedMesh.vertexCount > 0 ? generatedMesh : null;
+        }
+
+        private void NotifyWater()
+        {
+            if (linkedWater != null)
+            {
+                linkedWater.QueueRebuildShoreline();
+            }
         }
 
         private void ForcePlanarSpline()
