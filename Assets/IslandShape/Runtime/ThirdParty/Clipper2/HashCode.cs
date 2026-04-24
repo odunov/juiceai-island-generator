@@ -121,7 +121,7 @@ namespace Clipper2Lib
 
     [Obsolete("HashCode is a mutable struct and should not be compared with other HashCodes.", error: true)]
     [EditorBrowsable(EditorBrowsableState.Never)]
-    public override bool Equals(object? obj)
+    public override bool Equals(object obj)
     {
       throw new NotSupportedException($"{nameof(HashCode)}.{nameof(Equals)}() is not supported");
     }

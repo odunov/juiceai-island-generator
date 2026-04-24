@@ -2,187 +2,14 @@ using System.Collections.Generic;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Rendering;
-using UnityEngine.Serialization;
 using UnityEngine.Splines;
 
 #if UNITY_EDITOR
 using UnityEditor;
-using UnityEditor.Splines;
 #endif
 
 namespace Islands.EditorTools
 {
-    public enum IslandToolMode
-    {
-        Outline,
-        EdgeZones
-    }
-
-    public enum IslandEdgeZonePreset
-    {
-        Neutral,
-        Beach,
-        Cliff,
-        Cove,
-        Point
-    }
-
-    [System.Serializable]
-    public struct IslandEdgeZone
-    {
-        [SerializeField]
-        private string presetLabel;
-
-        [SerializeField]
-        [Range(0f, 1f)]
-        private float centerNormalized;
-
-        [SerializeField]
-        [Range(0.02f, 1f)]
-        private float spanNormalized;
-
-        [SerializeField]
-        private float silhouetteOffset;
-
-        [SerializeField]
-        private float coastBandWidthDelta;
-
-        [SerializeField]
-        [Min(0.1f)]
-        private float terraceWidthScale;
-
-        [SerializeField]
-        [Min(0.1f)]
-        private float terraceSoftnessScale;
-
-        public string PresetLabel
-        {
-            get => string.IsNullOrWhiteSpace(presetLabel) ? IslandEdgeZonePreset.Neutral.ToString() : presetLabel;
-            set => presetLabel = value;
-        }
-
-        public float CenterNormalized
-        {
-            get => centerNormalized;
-            set => centerNormalized = Mathf.Repeat(value, 1f);
-        }
-
-        public float SpanNormalized
-        {
-            get => spanNormalized;
-            set => spanNormalized = Mathf.Clamp(value, 0.02f, 1f);
-        }
-
-        public float SilhouetteOffset
-        {
-            get => silhouetteOffset;
-            set => silhouetteOffset = value;
-        }
-
-        public float CoastBandWidthDelta
-        {
-            get => coastBandWidthDelta;
-            set => coastBandWidthDelta = value;
-        }
-
-        public float TerraceWidthScale
-        {
-            get => terraceWidthScale;
-            set => terraceWidthScale = Mathf.Max(0.1f, value);
-        }
-
-        public float TerraceSoftnessScale
-        {
-            get => terraceSoftnessScale;
-            set => terraceSoftnessScale = Mathf.Max(0.1f, value);
-        }
-
-        public void Validate()
-        {
-            CenterNormalized = centerNormalized;
-            SpanNormalized = spanNormalized;
-            TerraceWidthScale = terraceWidthScale;
-            TerraceSoftnessScale = terraceSoftnessScale;
-            PresetLabel = presetLabel;
-        }
-    }
-
-    public static class IslandEdgeZonePresets
-    {
-        public static IslandEdgeZone CreateDefault()
-        {
-            var zone = CreateNeutralZone();
-            zone.CenterNormalized = 0f;
-            zone.SpanNormalized = 0.18f;
-            return zone;
-        }
-
-        public static void ApplyPreset(ref IslandEdgeZone zone, IslandEdgeZonePreset preset)
-        {
-            if (zone.Equals(default(IslandEdgeZone)))
-            {
-                zone = CreateNeutralZone();
-            }
-
-            switch (preset)
-            {
-                case IslandEdgeZonePreset.Beach:
-                    zone.PresetLabel = IslandEdgeZonePreset.Beach.ToString();
-                    zone.SilhouetteOffset = 0.04f;
-                    zone.CoastBandWidthDelta = 0.24f;
-                    zone.TerraceWidthScale = 0.85f;
-                    zone.TerraceSoftnessScale = 1.2f;
-                    break;
-                case IslandEdgeZonePreset.Cliff:
-                    zone.PresetLabel = IslandEdgeZonePreset.Cliff.ToString();
-                    zone.SilhouetteOffset = 0f;
-                    zone.CoastBandWidthDelta = -0.14f;
-                    zone.TerraceWidthScale = 1.2f;
-                    zone.TerraceSoftnessScale = 0.8f;
-                    break;
-                case IslandEdgeZonePreset.Cove:
-                    zone.PresetLabel = IslandEdgeZonePreset.Cove.ToString();
-                    zone.SilhouetteOffset = -0.18f;
-                    zone.CoastBandWidthDelta = 0.1f;
-                    zone.TerraceWidthScale = 0.95f;
-                    zone.TerraceSoftnessScale = 1.1f;
-                    break;
-                case IslandEdgeZonePreset.Point:
-                    zone.PresetLabel = IslandEdgeZonePreset.Point.ToString();
-                    zone.SilhouetteOffset = 0.18f;
-                    zone.CoastBandWidthDelta = -0.06f;
-                    zone.TerraceWidthScale = 1.12f;
-                    zone.TerraceSoftnessScale = 0.9f;
-                    break;
-                default:
-                    zone.PresetLabel = IslandEdgeZonePreset.Neutral.ToString();
-                    zone.SilhouetteOffset = 0f;
-                    zone.CoastBandWidthDelta = 0f;
-                    zone.TerraceWidthScale = 1f;
-                    zone.TerraceSoftnessScale = 1f;
-                    break;
-            }
-
-            zone.Validate();
-        }
-
-        private static IslandEdgeZone CreateNeutralZone()
-        {
-            var zone = new IslandEdgeZone
-            {
-                PresetLabel = IslandEdgeZonePreset.Neutral.ToString(),
-                CenterNormalized = 0f,
-                SpanNormalized = 0.18f,
-                SilhouetteOffset = 0f,
-                CoastBandWidthDelta = 0f,
-                TerraceWidthScale = 1f,
-                TerraceSoftnessScale = 1f
-            };
-            zone.Validate();
-            return zone;
-        }
-    }
-
     [ExecuteAlways]
     [DisallowMultipleComponent]
     [RequireComponent(typeof(MeshFilter))]
@@ -197,34 +24,8 @@ namespace Islands.EditorTools
         private float depth = 2f;
 
         [SerializeField]
-        [Min(1)]
-        private int terraceCount = 3;
-
-        [SerializeField]
-        [FormerlySerializedAs("terraceInset")]
-        [Min(0.01f)]
-        private float terraceStepWidth = 0.35f;
-
-        [SerializeField]
-        [Range(-1f, 1f)]
-        private float terraceWidthBias;
-
-        [SerializeField]
-        [Range(-1f, 1f)]
-        private float terraceDepthBias;
-
-        [SerializeField]
-        [Range(0f, 1f)]
-        private float terraceSoftness = 0.35f;
-
-        [SerializeField]
-        [FormerlySerializedAs("sampleSpacing")]
         [Min(0.05f)]
         private float spacing = 0.5f;
-
-        [SerializeField]
-        [Min(0.05f)]
-        private float coastBandWidth = 0.45f;
 
         [SerializeField]
         private bool generateCollider = true;
@@ -238,18 +39,11 @@ namespace Islands.EditorTools
         private float duplicatePointTolerance = 0.0001f;
 
         [SerializeField]
-        private List<IslandEdgeZone> edgeZones = new List<IslandEdgeZone>();
-
-        [SerializeField]
         private IslandWater linkedWater;
 
         [SerializeField]
         [HideInInspector]
         private bool isDrawing;
-
-        [SerializeField]
-        [HideInInspector]
-        private IslandToolMode toolMode;
 
         [SerializeField]
         [HideInInspector]
@@ -276,24 +70,9 @@ namespace Islands.EditorTools
         [System.NonSerialized]
         private int selectedKnotIndex = -1;
 
-        [System.NonSerialized]
-        private int selectedEdgeZoneIndex = -1;
-
         public float Depth => depth;
 
-        public int TerraceCount => terraceCount;
-
-        public float TerraceStepWidth => terraceStepWidth;
-
-        public float TerraceWidthBias => terraceWidthBias;
-
-        public float TerraceDepthBias => terraceDepthBias;
-
-        public float TerraceSoftness => terraceSoftness;
-
         public float Spacing => spacing;
-
-        public float CoastBandWidth => coastBandWidth;
 
         public bool GenerateCollider => generateCollider;
 
@@ -301,28 +80,14 @@ namespace Islands.EditorTools
 
         public float DuplicatePointTolerance => duplicatePointTolerance;
 
-        public IReadOnlyList<IslandEdgeZone> EdgeZones => edgeZones;
-
         public IslandWater LinkedWater => linkedWater;
 
         public bool IsDrawing => isDrawing;
-
-        public IslandToolMode ToolMode
-        {
-            get => toolMode;
-            set => toolMode = value;
-        }
 
         public int SelectedKnotIndex
         {
             get => selectedKnotIndex;
             set => selectedKnotIndex = value;
-        }
-
-        public int SelectedEdgeZoneIndex
-        {
-            get => selectedEdgeZoneIndex;
-            set => selectedEdgeZoneIndex = value;
         }
 
         public string LastValidationMessage => lastValidationMessage;
@@ -336,14 +101,7 @@ namespace Islands.EditorTools
         public IslandMeshBuildSettings BuildSettings =>
             new IslandMeshBuildSettings(
                 depth,
-                terraceCount,
-                terraceStepWidth,
-                terraceWidthBias,
-                terraceDepthBias,
-                terraceSoftness,
                 spacing,
-                coastBandWidth,
-                edgeZones,
                 minimumArea,
                 duplicatePointTolerance);
 
@@ -392,20 +150,14 @@ namespace Islands.EditorTools
         private void OnValidate()
         {
             depth = Mathf.Max(0.1f, depth);
-            terraceCount = Mathf.Clamp(terraceCount, 1, 8);
-            terraceStepWidth = Mathf.Max(0.01f, terraceStepWidth);
-            terraceWidthBias = Mathf.Clamp(terraceWidthBias, -1f, 1f);
-            terraceDepthBias = Mathf.Clamp(terraceDepthBias, -1f, 1f);
-            terraceSoftness = Mathf.Clamp01(terraceSoftness);
             spacing = Mathf.Max(0.05f, spacing);
-            coastBandWidth = Mathf.Max(0.05f, coastBandWidth);
             minimumArea = Mathf.Max(0.001f, minimumArea);
             duplicatePointTolerance = Mathf.Max(0.0001f, duplicatePointTolerance);
-            ValidateEdgeZones();
 
             EnsureSetup();
             EnsureSplineExists();
             ForcePlanarSpline();
+            selectedKnotIndex = Mathf.Clamp(selectedKnotIndex, -1, (Spline?.Count ?? 0) - 1);
             RebuildImmediate();
         }
 
@@ -435,7 +187,6 @@ namespace Islands.EditorTools
             EnsureSetup();
             EnsureSplineExists();
             isDrawing = true;
-            toolMode = IslandToolMode.Outline;
 
             if (Spline != null)
             {
@@ -444,7 +195,6 @@ namespace Islands.EditorTools
 
             lastValidationMessage = string.Empty;
             selectedKnotIndex = Mathf.Clamp(selectedKnotIndex, -1, (Spline?.Count ?? 0) - 1);
-            selectedEdgeZoneIndex = Mathf.Clamp(selectedEdgeZoneIndex, -1, edgeZones.Count - 1);
             RebuildImmediate();
         }
 
@@ -457,7 +207,6 @@ namespace Islands.EditorTools
 
             Spline.Closed = true;
             isDrawing = false;
-            toolMode = IslandToolMode.Outline;
             RebuildImmediate();
             return true;
         }
@@ -476,9 +225,7 @@ namespace Islands.EditorTools
             }
 
             isDrawing = false;
-            toolMode = IslandToolMode.Outline;
             selectedKnotIndex = -1;
-            selectedEdgeZoneIndex = -1;
             lastValidationMessage = string.Empty;
             RebuildImmediate();
         }
@@ -534,83 +281,6 @@ namespace Islands.EditorTools
             ClampPlanar(ref knot);
             Spline[knotIndex] = knot;
             selectedKnotIndex = knotIndex;
-            RebuildImmediate();
-        }
-
-        public void AddEdgeZone(float centerNormalized = 0f)
-        {
-            edgeZones ??= new List<IslandEdgeZone>();
-            var zone = IslandEdgeZonePresets.CreateDefault();
-            zone.CenterNormalized = centerNormalized;
-            edgeZones.Add(zone);
-            selectedEdgeZoneIndex = edgeZones.Count - 1;
-            toolMode = IslandToolMode.EdgeZones;
-            RebuildImmediate();
-        }
-
-        public void RemoveEdgeZone(int edgeZoneIndex)
-        {
-            if (edgeZones == null || edgeZoneIndex < 0 || edgeZoneIndex >= edgeZones.Count)
-            {
-                return;
-            }
-
-            edgeZones.RemoveAt(edgeZoneIndex);
-            selectedEdgeZoneIndex = Mathf.Clamp(selectedEdgeZoneIndex, -1, edgeZones.Count - 1);
-            RebuildImmediate();
-        }
-
-        public void MoveEdgeZone(int fromIndex, int toIndex)
-        {
-            if (edgeZones == null ||
-                fromIndex < 0 || fromIndex >= edgeZones.Count ||
-                toIndex < 0 || toIndex >= edgeZones.Count ||
-                fromIndex == toIndex)
-            {
-                return;
-            }
-
-            var zone = edgeZones[fromIndex];
-            edgeZones.RemoveAt(fromIndex);
-            edgeZones.Insert(toIndex, zone);
-            selectedEdgeZoneIndex = toIndex;
-            RebuildImmediate();
-        }
-
-        public IslandEdgeZone GetEdgeZone(int edgeZoneIndex)
-        {
-            if (edgeZones == null || edgeZoneIndex < 0 || edgeZoneIndex >= edgeZones.Count)
-            {
-                return IslandEdgeZonePresets.CreateDefault();
-            }
-
-            return edgeZones[edgeZoneIndex];
-        }
-
-        public void SetEdgeZone(int edgeZoneIndex, IslandEdgeZone edgeZone)
-        {
-            if (edgeZones == null || edgeZoneIndex < 0 || edgeZoneIndex >= edgeZones.Count)
-            {
-                return;
-            }
-
-            edgeZone.Validate();
-            edgeZones[edgeZoneIndex] = edgeZone;
-            selectedEdgeZoneIndex = edgeZoneIndex;
-            RebuildImmediate();
-        }
-
-        public void ApplyEdgeZonePreset(int edgeZoneIndex, IslandEdgeZonePreset preset)
-        {
-            if (edgeZones == null || edgeZoneIndex < 0 || edgeZoneIndex >= edgeZones.Count)
-            {
-                return;
-            }
-
-            var edgeZone = edgeZones[edgeZoneIndex];
-            IslandEdgeZonePresets.ApplyPreset(ref edgeZone, preset);
-            edgeZones[edgeZoneIndex] = edgeZone;
-            selectedEdgeZoneIndex = edgeZoneIndex;
             RebuildImmediate();
         }
 
@@ -709,9 +379,9 @@ namespace Islands.EditorTools
                 generatedMesh = new Mesh
                 {
                     name = $"Island Shape Mesh ({GetInstanceID()})",
-                    hideFlags = HideFlags.HideAndDontSave
+                    hideFlags = HideFlags.HideAndDontSave,
+                    indexFormat = IndexFormat.UInt32
                 };
-                generatedMesh.indexFormat = IndexFormat.UInt32;
             }
 
             if (meshFilter != null && meshFilter.sharedMesh != generatedMesh)
@@ -802,19 +472,6 @@ namespace Islands.EditorTools
             }
         }
 
-        private void ValidateEdgeZones()
-        {
-            edgeZones ??= new List<IslandEdgeZone>();
-            for (var i = 0; i < edgeZones.Count; i++)
-            {
-                var edgeZone = edgeZones[i];
-                edgeZone.Validate();
-                edgeZones[i] = edgeZone;
-            }
-
-            selectedEdgeZoneIndex = Mathf.Clamp(selectedEdgeZoneIndex, -1, edgeZones.Count - 1);
-        }
-
         private static void ClampPlanar(ref BezierKnot knot)
         {
             knot.Position = new float3(knot.Position.x, 0f, knot.Position.z);
@@ -882,9 +539,6 @@ namespace Islands.EditorTools
         {
             Undo.undoRedoPerformed -= OnUndoRedoPerformed;
             Undo.undoRedoPerformed += OnUndoRedoPerformed;
-
-            EditorSplineUtility.AfterSplineWasModified -= OnSplineModified;
-            EditorSplineUtility.AfterSplineWasModified += OnSplineModified;
         }
 
         private static void RegisterEditorInstance(IslandShape islandShape)
@@ -901,19 +555,6 @@ namespace Islands.EditorTools
         private static void OnUndoRedoPerformed()
         {
             RebuildTrackedInstances();
-        }
-
-        private static void OnSplineModified(Spline spline)
-        {
-            foreach (var islandShape in EditorInstances)
-            {
-                if (islandShape == null || !islandShape.OwnsSpline(spline))
-                {
-                    continue;
-                }
-
-                islandShape.RebuildImmediate();
-            }
         }
 
         private static void RebuildTrackedInstances()

@@ -8,54 +8,60 @@ namespace Islands.EditorTools.Tests
 {
     public sealed class IslandMeshBuilderTests
     {
-        private static readonly IslandMeshBuildSettings DefaultSettings =
-            new IslandMeshBuildSettings(2f, 3, 0.35f, 0f, 0f, 0.35f, 0.5f, 0.1f, 0.01f);
+        private const float HeightTolerance = 0.0001f;
+        private const float BoundaryTolerance = 0.0015f;
+        private static readonly IslandMeshBuildSettings DefaultSettings = new IslandMeshBuildSettings(2f, 0.5f, 0.1f, 0.01f);
 
         [Test]
-        public void Build_CreatesTopAndSides_ForSimpleSquare()
+        public void Build_AddsInteriorTopVertices_ForSimpleSquare()
         {
-            var spline = CreateClosedLinearSpline(
-                new float3(-1f, 0f, -1f),
-                new float3(1f, 0f, -1f),
-                new float3(1f, 0f, 1f),
-                new float3(-1f, 0f, 1f));
+            var outlinePoints = new[]
+            {
+                new float3(-2f, 0f, -2f),
+                new float3(2f, 0f, -2f),
+                new float3(2f, 0f, 2f),
+                new float3(-2f, 0f, 2f)
+            };
+            var outline = CreateOutline(outlinePoints);
+            var spline = CreateClosedLinearSpline(outlinePoints);
 
             var result = IslandMeshBuilder.Build(spline, DefaultSettings);
 
             Assert.That(result.Succeeded, Is.True, result.ValidationMessage);
-            Assert.That(result.MeshData.Vertices.Length, Is.GreaterThan(0));
-            Assert.That(result.MeshData.Triangles.Length % 3, Is.EqualTo(0));
-
-            var bounds = new Bounds(result.MeshData.Vertices[0], Vector3.zero);
-            for (var i = 1; i < result.MeshData.Vertices.Length; i++)
-            {
-                bounds.Encapsulate(result.MeshData.Vertices[i]);
-            }
-
-            Assert.That(bounds.max.y, Is.EqualTo(0f).Within(0.0001f));
-            Assert.That(bounds.min.y, Is.EqualTo(-2f).Within(0.0001f));
+            Assert.That(CountInteriorTopVertices(result.MeshData, outline), Is.GreaterThan(0));
         }
 
         [Test]
-        public void Build_TriangulatesConcaveOutline()
+        public void Build_TriangulatesConcaveOutline_AndKeepsBoundaryOnTheDrawnShape()
         {
-            var spline = CreateClosedLinearSpline(
+            var outlinePoints = new[]
+            {
                 new float3(-2f, 0f, -1f),
                 new float3(0f, 0f, -1f),
                 new float3(0f, 0f, -2f),
                 new float3(2f, 0f, 0f),
                 new float3(0f, 0f, 2f),
                 new float3(0f, 0f, 1f),
-                new float3(-2f, 0f, 1f));
+                new float3(-2f, 0f, 1f)
+            };
+            var outline = CreateOutline(outlinePoints);
+            var spline = CreateClosedLinearSpline(outlinePoints);
 
             var result = IslandMeshBuilder.Build(spline, DefaultSettings);
 
             Assert.That(result.Succeeded, Is.True, result.ValidationMessage);
-            Assert.That(result.MeshData.Triangles.Length, Is.GreaterThan(0));
+
+            var boundaryVertices = GetBoundaryTopVertices(result.MeshData);
+            Assert.That(boundaryVertices.Count, Is.GreaterThan(0));
+
+            foreach (var boundaryVertex in boundaryVertices)
+            {
+                Assert.That(DistanceToPolygonBoundary(boundaryVertex, outline), Is.LessThanOrEqualTo(BoundaryTolerance));
+            }
         }
 
         [Test]
-        public void Build_GeneratesUpwardTopTriangles_AndNoBottomCap()
+        public void Build_GeneratesUpwardTopTriangles_AndDownwardBottomTriangles()
         {
             var spline = CreateClosedLinearSpline(
                 new float3(-1f, 0f, -1f),
@@ -67,6 +73,7 @@ namespace Islands.EditorTools.Tests
 
             Assert.That(result.Succeeded, Is.True, result.ValidationMessage);
 
+            var topTriangleCount = 0;
             var bottomTriangleCount = 0;
             for (var i = 0; i < result.MeshData.Triangles.Length; i += 3)
             {
@@ -74,27 +81,27 @@ namespace Islands.EditorTools.Tests
                 var b = result.MeshData.Vertices[result.MeshData.Triangles[i + 1]];
                 var c = result.MeshData.Vertices[result.MeshData.Triangles[i + 2]];
 
-                var isTopTriangle = Mathf.Abs(a.y) < 0.0001f && Mathf.Abs(b.y) < 0.0001f && Mathf.Abs(c.y) < 0.0001f;
-                if (isTopTriangle)
+                if (AreAllVerticesAtHeight(a, b, c, 0f))
                 {
                     var normal = Vector3.Cross(b - a, c - a).normalized;
                     Assert.That(normal.y, Is.GreaterThan(0.99f));
+                    topTriangleCount++;
                 }
 
-                var isBottomTriangle = Mathf.Abs(a.y + DefaultSettings.Depth) < 0.0001f &&
-                                       Mathf.Abs(b.y + DefaultSettings.Depth) < 0.0001f &&
-                                       Mathf.Abs(c.y + DefaultSettings.Depth) < 0.0001f;
-                if (isBottomTriangle)
+                if (AreAllVerticesAtHeight(a, b, c, -DefaultSettings.Depth))
                 {
+                    var normal = Vector3.Cross(b - a, c - a).normalized;
+                    Assert.That(normal.y, Is.LessThan(-0.99f));
                     bottomTriangleCount++;
                 }
             }
 
-            Assert.That(bottomTriangleCount, Is.EqualTo(0));
+            Assert.That(topTriangleCount, Is.GreaterThan(0));
+            Assert.That(bottomTriangleCount, Is.GreaterThan(0));
         }
 
         [Test]
-        public void Build_CreatesStructuredTopBand_WithInnerTopRingVertices()
+        public void Build_OnlyUsesTopAndBottomHeights()
         {
             var spline = CreateClosedLinearSpline(
                 new float3(-1f, 0f, -1f),
@@ -105,136 +112,35 @@ namespace Islands.EditorTools.Tests
             var result = IslandMeshBuilder.Build(spline, DefaultSettings);
 
             Assert.That(result.Succeeded, Is.True, result.ValidationMessage);
-            Assert.That(CountUniqueTopOutlinePoints(result.MeshData), Is.GreaterThan(4));
-
-            var innerRingVertexCount = 0;
-            for (var i = 0; i < result.MeshData.Vertices.Length; i++)
-            {
-                var vertex = result.MeshData.Vertices[i];
-                if (Mathf.Abs(vertex.y) > 0.0001f)
-                {
-                    continue;
-                }
-
-                if (Mathf.Abs(vertex.x) < 0.9f && Mathf.Abs(vertex.z) < 0.9f)
-                {
-                    innerRingVertexCount++;
-                }
-            }
-
-            Assert.That(innerRingVertexCount, Is.GreaterThan(0));
+            Assert.That(GetRoundedHeights(result.MeshData), Is.EquivalentTo(new[] { -2000, 0 }));
         }
 
         [Test]
-        public void Build_CreatesHorizontalTerraceLedges()
+        public void Build_SmallerSpacing_IncreasesTopDensity()
         {
-            var spline = CreateClosedLinearSpline(
-                new float3(-1f, 0f, -1f),
-                new float3(1f, 0f, -1f),
-                new float3(1f, 0f, 1f),
-                new float3(-1f, 0f, 1f));
+            var spline = CreateClosedEllipseSpline(3f, 2f);
 
-            var result = IslandMeshBuilder.Build(spline, DefaultSettings);
+            var denseResult = IslandMeshBuilder.Build(spline, CreateSettings(0.35f));
+            var sparseResult = IslandMeshBuilder.Build(spline, CreateSettings(0.9f));
 
-            Assert.That(result.Succeeded, Is.True, result.ValidationMessage);
+            Assert.That(denseResult.Succeeded, Is.True, denseResult.ValidationMessage);
+            Assert.That(sparseResult.Succeeded, Is.True, sparseResult.ValidationMessage);
 
-            var ledgeTriangleCount = 0;
-            for (var i = 0; i < result.MeshData.Triangles.Length; i += 3)
-            {
-                var a = result.MeshData.Vertices[result.MeshData.Triangles[i]];
-                var b = result.MeshData.Vertices[result.MeshData.Triangles[i + 1]];
-                var c = result.MeshData.Vertices[result.MeshData.Triangles[i + 2]];
-
-                var sameHeight = Mathf.Abs(a.y - b.y) < 0.0001f && Mathf.Abs(b.y - c.y) < 0.0001f;
-                var isIntermediateHeight = a.y < -0.0001f && a.y > -DefaultSettings.Depth + 0.0001f;
-                if (!sameHeight || !isIntermediateHeight)
-                {
-                    continue;
-                }
-
-                var normal = Vector3.Cross(b - a, c - a).normalized;
-                if (normal.y > 0.99f)
-                {
-                    ledgeTriangleCount++;
-                }
-            }
-
-            Assert.That(ledgeTriangleCount, Is.GreaterThan(0));
+            Assert.That(CountUniqueVerticesAtHeight(denseResult.MeshData, 0f), Is.GreaterThan(CountUniqueVerticesAtHeight(sparseResult.MeshData, 0f)));
+            Assert.That(CountTrianglesAtHeight(denseResult.MeshData, 0f), Is.GreaterThan(CountTrianglesAtHeight(sparseResult.MeshData, 0f)));
         }
 
         [Test]
-        public void Build_ExpandsTerracesOutward_AsTheyDescend()
+        public void Build_UsesCleanAuthoringBoundary_ForTopPerimeter()
         {
-            var spline = CreateClosedLinearSpline(
-                new float3(-1f, 0f, -1f),
-                new float3(1f, 0f, -1f),
-                new float3(1f, 0f, 1f),
-                new float3(-1f, 0f, 1f));
+            var spline = CreateClosedEllipseSpline(3f, 2f);
 
-            var result = IslandMeshBuilder.Build(spline, DefaultSettings);
+            var buildResult = IslandMeshBuilder.Build(spline, CreateSettings(1.5f));
+            var polygonResult = IslandMeshBuilder.TryBuildTopPolygon(spline, CreateSettings(1.5f), out var polygon, out var validationMessage);
 
-            Assert.That(result.Succeeded, Is.True, result.ValidationMessage);
-
-            var bounds = new Bounds(result.MeshData.Vertices[0], Vector3.zero);
-            for (var i = 1; i < result.MeshData.Vertices.Length; i++)
-            {
-                bounds.Encapsulate(result.MeshData.Vertices[i]);
-            }
-
-            Assert.That(bounds.min.x, Is.LessThan(-1f));
-            Assert.That(bounds.max.x, Is.GreaterThan(1f));
-            Assert.That(bounds.min.z, Is.LessThan(-1f));
-            Assert.That(bounds.max.z, Is.GreaterThan(1f));
-        }
-
-        [Test]
-        public void Build_MergesNarrowConcavities_IntoSmoothTerraces()
-        {
-            var settings = new IslandMeshBuildSettings(2f, 2, 0.6f, 0f, 0f, 0.8f, 0.25f, 0.1f, 0.01f);
-            var spline = CreateClosedLinearSpline(
-                new float3(-3f, 0f, -2f),
-                new float3(3f, 0f, -2f),
-                new float3(3f, 0f, 2f),
-                new float3(0.5f, 0f, 2f),
-                new float3(0.5f, 0f, 0.3f),
-                new float3(-0.5f, 0f, 0.3f),
-                new float3(-0.5f, 0f, 2f),
-                new float3(-3f, 0f, 2f));
-
-            var result = IslandMeshBuilder.Build(spline, settings);
-
-            Assert.That(result.Succeeded, Is.True, result.ValidationMessage);
-
-            var bridgedVertexCount = 0;
-            for (var i = 0; i < result.MeshData.Vertices.Length; i++)
-            {
-                var vertex = result.MeshData.Vertices[i];
-                if (vertex.y < -0.0001f && vertex.z > 2.2f && Mathf.Abs(vertex.x) < 0.2f)
-                {
-                    bridgedVertexCount++;
-                }
-            }
-
-            Assert.That(bridgedVertexCount, Is.GreaterThan(0), "Expected lower terraces to smooth over the narrow notch.");
-        }
-
-        [Test]
-        public void Build_AllowsShortEdgesThatOnlyNearMissOtherSegments()
-        {
-            var settings = new IslandMeshBuildSettings(2f, 1, 0.35f, 0f, 0f, 0.35f, 0.5f, 0.1f, 0.025f);
-            var spline = CreateClosedLinearSpline(
-                new float3(0f, 0f, 0f),
-                new float3(0.1f, 0f, 0.02f),
-                new float3(0.1f, 0f, 1f),
-                new float3(2f, 0f, 1f),
-                new float3(2f, 0f, 2f),
-                new float3(-2f, 0f, 2f),
-                new float3(-2f, 0f, 0.04f),
-                new float3(0f, 0f, 0.04f));
-
-            var result = IslandMeshBuilder.Build(spline, settings);
-
-            Assert.That(result.Succeeded, Is.True, result.ValidationMessage);
+            Assert.That(buildResult.Succeeded, Is.True, buildResult.ValidationMessage);
+            Assert.That(polygonResult, Is.True, validationMessage);
+            Assert.That(CountTopBoundaryVertices(buildResult.MeshData, polygon), Is.EqualTo(polygon.Count));
         }
 
         [Test]
@@ -253,163 +159,100 @@ namespace Islands.EditorTools.Tests
         }
 
         [Test]
-        public void Build_EdgeZoneSilhouetteOffset_ReshapesLocalCoastline()
+        public void Build_AllowsNearMissConcaveOutline()
         {
             var spline = CreateClosedLinearSpline(
-                new float3(-1f, 0f, -1f),
-                new float3(1f, 0f, -1f),
-                new float3(1f, 0f, 1f),
-                new float3(-1f, 0f, 1f));
-
-            var baselineResult = IslandMeshBuilder.Build(spline, CreateStructuredSettings(0.25f));
-            var sculptedResult = IslandMeshBuilder.Build(
-                spline,
-                CreateStructuredSettings(
-                    0.25f,
-                    CreateEdgeZone(0.375f, 0.35f, 0.4f, 0f, 1f, 1f)));
-
-            Assert.That(baselineResult.Succeeded, Is.True, baselineResult.ValidationMessage);
-            Assert.That(sculptedResult.Succeeded, Is.True, sculptedResult.ValidationMessage);
-
-            var baselineTopBounds = GetTopBounds(baselineResult.MeshData);
-            var sculptedTopBounds = GetTopBounds(sculptedResult.MeshData);
-
-            Assert.That(sculptedTopBounds.max.x, Is.GreaterThan(baselineTopBounds.max.x + 0.15f));
-            Assert.That(sculptedTopBounds.min.x, Is.EqualTo(baselineTopBounds.min.x).Within(0.05f));
-        }
-
-        [Test]
-        public void Build_EdgeZoneCoastBandDelta_ChangesLocalInnerRingWidth()
-        {
-            var spline = CreateClosedLinearSpline(
-                new float3(-1f, 0f, -1f),
-                new float3(1f, 0f, -1f),
-                new float3(1f, 0f, 1f),
-                new float3(-1f, 0f, 1f));
-
-            var baselineResult = IslandMeshBuilder.Build(
-                spline,
-                CreateStructuredSettings(5f, coastBandWidth: 0.3f));
-            var widenedBandResult = IslandMeshBuilder.Build(
-                spline,
-                CreateStructuredSettings(
-                    5f,
-                    CreateEdgeZone(0.375f, 0.55f, 0f, 0.5f, 1f, 1f),
-                    0.3f));
-
-            Assert.That(baselineResult.Succeeded, Is.True, baselineResult.ValidationMessage);
-            Assert.That(widenedBandResult.Succeeded, Is.True, widenedBandResult.ValidationMessage);
-
-            var baselineInnerMaxX = GetLargestInnerTopX(baselineResult.MeshData);
-            var widenedInnerMaxX = GetLargestInnerTopX(widenedBandResult.MeshData);
-
-            Assert.That(widenedInnerMaxX, Is.LessThan(baselineInnerMaxX - 0.05f));
-        }
-
-        [Test]
-        public void Build_EdgeZoneTerraceWidthScale_WidensTerracesLocally()
-        {
-            var spline = CreateClosedLinearSpline(
-                new float3(-1f, 0f, -1f),
-                new float3(1f, 0f, -1f),
-                new float3(1f, 0f, 1f),
-                new float3(-1f, 0f, 1f));
-
-            var baselineResult = IslandMeshBuilder.Build(spline, CreateStructuredSettings(0.25f));
-            var widenedTerraceResult = IslandMeshBuilder.Build(
-                spline,
-                CreateStructuredSettings(
-                    0.25f,
-                    CreateEdgeZone(0.375f, 0.35f, 0f, 0f, 1.8f, 1f)));
-
-            Assert.That(baselineResult.Succeeded, Is.True, baselineResult.ValidationMessage);
-            Assert.That(widenedTerraceResult.Succeeded, Is.True, widenedTerraceResult.ValidationMessage);
-
-            var baselineTopBounds = GetTopBounds(baselineResult.MeshData);
-            var widenedTopBounds = GetTopBounds(widenedTerraceResult.MeshData);
-            var baselineLowerMaxX = GetMaxXBelowHeight(baselineResult.MeshData, -0.2f);
-            var widenedLowerMaxX = GetMaxXBelowHeight(widenedTerraceResult.MeshData, -0.2f);
-
-            Assert.That(widenedTopBounds.max.x, Is.EqualTo(baselineTopBounds.max.x).Within(0.05f));
-            Assert.That(widenedLowerMaxX, Is.GreaterThan(baselineLowerMaxX + 0.05f));
-        }
-
-        [Test]
-        public void Build_IncreasingSpacing_ReducesBasePoints_OnBroadCurves()
-        {
-            var spline = CreateClosedEllipseSpline(3f, 2f);
-
-            var denseResult = IslandMeshBuilder.Build(spline, CreateSamplingSettings(0.25f));
-            var sparseResult = IslandMeshBuilder.Build(spline, CreateSamplingSettings(0.75f));
-
-            Assert.That(denseResult.Succeeded, Is.True, denseResult.ValidationMessage);
-            Assert.That(sparseResult.Succeeded, Is.True, sparseResult.ValidationMessage);
-            Assert.That(CountUniqueTopOutlinePoints(denseResult.MeshData), Is.GreaterThan(CountUniqueTopOutlinePoints(sparseResult.MeshData)));
-        }
-
-        [Test]
-        public void Build_DecreasingSpacing_MonotonicallyIncreasesBasePoints_OnBroadCurves()
-        {
-            var spline = CreateClosedEllipseSpline(3f, 2f);
-
-            var coarseResult = IslandMeshBuilder.Build(spline, CreateSamplingSettings(1.2f));
-            var mediumResult = IslandMeshBuilder.Build(spline, CreateSamplingSettings(0.6f));
-            var denseResult = IslandMeshBuilder.Build(spline, CreateSamplingSettings(0.3f));
-
-            Assert.That(coarseResult.Succeeded, Is.True, coarseResult.ValidationMessage);
-            Assert.That(mediumResult.Succeeded, Is.True, mediumResult.ValidationMessage);
-            Assert.That(denseResult.Succeeded, Is.True, denseResult.ValidationMessage);
-
-            var coarseCount = CountUniqueTopOutlinePoints(coarseResult.MeshData);
-            var mediumCount = CountUniqueTopOutlinePoints(mediumResult.MeshData);
-            var denseCount = CountUniqueTopOutlinePoints(denseResult.MeshData);
-
-            Assert.That(mediumCount, Is.GreaterThan(coarseCount));
-            Assert.That(denseCount, Is.GreaterThan(mediumCount));
-        }
-
-        [Test]
-        public void Build_SpacingMaintainsConsistentWorldSpaceDensity_AcrossScales()
-        {
-            var smallSpline = CreateClosedLinearSpline(
-                new float3(-1f, 0f, -1f),
-                new float3(1f, 0f, -1f),
-                new float3(1f, 0f, 1f),
-                new float3(-1f, 0f, 1f));
-            var largeSpline = CreateClosedLinearSpline(
-                new float3(-2f, 0f, -2f),
-                new float3(2f, 0f, -2f),
+                new float3(0f, 0f, 0f),
+                new float3(0.1f, 0f, 0.02f),
+                new float3(0.1f, 0f, 1f),
+                new float3(2f, 0f, 1f),
                 new float3(2f, 0f, 2f),
-                new float3(-2f, 0f, 2f));
+                new float3(-2f, 0f, 2f),
+                new float3(-2f, 0f, 0.04f),
+                new float3(0f, 0f, 0.04f));
 
-            var settings = CreateSamplingSettings(0.5f);
-            var smallResult = IslandMeshBuilder.Build(smallSpline, settings);
-            var largeResult = IslandMeshBuilder.Build(largeSpline, settings);
+            var result = IslandMeshBuilder.Build(spline, CreateSettings(0.35f));
 
-            Assert.That(smallResult.Succeeded, Is.True, smallResult.ValidationMessage);
-            Assert.That(largeResult.Succeeded, Is.True, largeResult.ValidationMessage);
+            Assert.That(result.Succeeded, Is.True, result.ValidationMessage);
+        }
 
-            var smallPointCount = CountUniqueTopOutlinePoints(smallResult.MeshData);
-            var largePointCount = CountUniqueTopOutlinePoints(largeResult.MeshData);
-            var ratio = largePointCount / (float)smallPointCount;
+        [TestCase(0.2f)]
+        [TestCase(0.35f)]
+        [TestCase(0.5f)]
+        [TestCase(0.8f)]
+        public void Build_NearMissConcaveOutline_RemainsValidAcrossSpacingChanges(float spacing)
+        {
+            var spline = CreateClosedLinearSpline(
+                new float3(0f, 0f, 0f),
+                new float3(0.1f, 0f, 0.02f),
+                new float3(0.1f, 0f, 1f),
+                new float3(2f, 0f, 1f),
+                new float3(2f, 0f, 2f),
+                new float3(-2f, 0f, 2f),
+                new float3(-2f, 0f, 0.04f),
+                new float3(0f, 0f, 0.04f));
 
-            Assert.That(largePointCount, Is.GreaterThan(smallPointCount));
-            Assert.That(ratio, Is.EqualTo(2f).Within(0.15f));
+            var result = IslandMeshBuilder.Build(spline, CreateSettings(spacing));
+
+            Assert.That(result.Succeeded, Is.True, result.ValidationMessage);
         }
 
         [Test]
-        public void Build_HighDuplicateTolerance_DoesNotInvertSpacingDensity_OnBroadCurves()
+        public void TryBuildTopPolygon_DoesNotForceSmoothKnotsIntoBoundary()
+        {
+            const int knotCount = 12;
+            var spline = new Spline(knotCount, true);
+            for (var i = 0; i < knotCount; i++)
+            {
+                var angle = (Mathf.PI * 2f * i) / knotCount;
+                spline.Add(
+                    new BezierKnot(new float3(Mathf.Cos(angle) * 3f, 0f, Mathf.Sin(angle) * 2f)),
+                    TangentMode.AutoSmooth);
+            }
+
+            spline.Closed = true;
+
+            var succeeded = IslandMeshBuilder.TryBuildTopPolygon(spline, CreateSettings(4.5f), out var polygon, out var validationMessage);
+
+            Assert.That(succeeded, Is.True, validationMessage);
+            Assert.That(polygon.Count, Is.LessThan(knotCount));
+        }
+
+        [Test]
+        public void Build_UsesCleanAuthoringBoundary_ForSideWalls()
         {
             var spline = CreateClosedEllipseSpline(3f, 2f);
-            var looseSettings = new IslandMeshBuildSettings(2f, 1, 0.35f, 0f, 0f, 0.35f, 0.6f, 0.1f, 0.1f);
-            var denseSettings = new IslandMeshBuildSettings(2f, 1, 0.35f, 0f, 0f, 0.35f, 0.3f, 0.1f, 0.1f);
 
-            var looseResult = IslandMeshBuilder.Build(spline, looseSettings);
-            var denseResult = IslandMeshBuilder.Build(spline, denseSettings);
+            var buildResult = IslandMeshBuilder.Build(spline, CreateSettings(1.5f));
+            var polygonResult = IslandMeshBuilder.TryBuildTopPolygon(spline, CreateSettings(1.5f), out var polygon, out var validationMessage);
 
-            Assert.That(looseResult.Succeeded, Is.True, looseResult.ValidationMessage);
-            Assert.That(denseResult.Succeeded, Is.True, denseResult.ValidationMessage);
-            Assert.That(CountUniqueTopOutlinePoints(denseResult.MeshData), Is.GreaterThan(CountUniqueTopOutlinePoints(looseResult.MeshData)));
+            Assert.That(buildResult.Succeeded, Is.True, buildResult.ValidationMessage);
+            Assert.That(polygonResult, Is.True, validationMessage);
+            Assert.That(GetBoundaryTopVertices(buildResult.MeshData).Count, Is.EqualTo(polygon.Count));
+        }
+
+        [Test]
+        public void TryBuildTopPolygon_StaysOnTheAuthoringBoundary()
+        {
+            var spline = CreateClosedEllipseSpline(3f, 2f);
+
+            var buildResult = IslandMeshBuilder.Build(spline, DefaultSettings);
+            var polygonResult = IslandMeshBuilder.TryBuildTopPolygon(spline, DefaultSettings, out var polygon, out var validationMessage);
+
+            Assert.That(buildResult.Succeeded, Is.True, buildResult.ValidationMessage);
+            Assert.That(polygonResult, Is.True, validationMessage);
+            Assert.That(CountUniqueVerticesAtHeight(buildResult.MeshData, 0f), Is.GreaterThan(polygon.Count));
+        }
+
+        private static List<Vector2> CreateOutline(params float3[] points)
+        {
+            var outline = new List<Vector2>(points.Length);
+            for (var i = 0; i < points.Length; i++)
+            {
+                outline.Add(new Vector2(points[i].x, points[i].z));
+            }
+
+            return outline;
         }
 
         private static Spline CreateClosedLinearSpline(params float3[] points)
@@ -460,123 +303,164 @@ namespace Islands.EditorTools.Tests
             return spline;
         }
 
-        private static IslandMeshBuildSettings CreateSamplingSettings(float spacing)
+        private static IslandMeshBuildSettings CreateSettings(float spacing, float duplicatePointTolerance = 0.01f)
         {
-            return new IslandMeshBuildSettings(2f, 1, 0.35f, 0f, 0f, 0.35f, spacing, 0.1f, 0.01f);
+            return new IslandMeshBuildSettings(2f, spacing, 0.1f, duplicatePointTolerance);
         }
 
-        private static IslandMeshBuildSettings CreateStructuredSettings(float spacing, IslandEdgeZone? edgeZone = null, float coastBandWidth = 0.45f)
+        private static int CountInteriorTopVertices(IslandMeshData meshData, IReadOnlyList<Vector2> outline)
         {
-            var edgeZones = edgeZone.HasValue ? new List<IslandEdgeZone> { edgeZone.Value } : new List<IslandEdgeZone>();
-            return new IslandMeshBuildSettings(2f, 3, 0.35f, 0f, 0f, 0.35f, spacing, coastBandWidth, edgeZones, 0.1f, 0.01f);
-        }
-
-        private static IslandEdgeZone CreateEdgeZone(
-            float centerNormalized,
-            float spanNormalized,
-            float silhouetteOffset,
-            float coastBandWidthDelta,
-            float terraceWidthScale,
-            float terraceSoftnessScale)
-        {
-            var edgeZone = IslandEdgeZonePresets.CreateDefault();
-            edgeZone.CenterNormalized = centerNormalized;
-            edgeZone.SpanNormalized = spanNormalized;
-            edgeZone.SilhouetteOffset = silhouetteOffset;
-            edgeZone.CoastBandWidthDelta = coastBandWidthDelta;
-            edgeZone.TerraceWidthScale = terraceWidthScale;
-            edgeZone.TerraceSoftnessScale = terraceSoftnessScale;
-            return edgeZone;
-        }
-
-        private static int CountUniqueTopOutlinePoints(IslandMeshData meshData)
-        {
-            var uniquePoints = new HashSet<Vector2Int>();
-            for (var i = 0; i < meshData.Vertices.Length; i++)
+            var count = 0;
+            foreach (var vertex in GetUniqueVerticesAtHeight(meshData, 0f))
             {
-                var vertex = meshData.Vertices[i];
-                if (Mathf.Abs(vertex.y) > 0.0001f)
+                if (DistanceToPolygonBoundary(vertex, outline) > BoundaryTolerance)
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private static List<Vector2> GetBoundaryTopVertices(IslandMeshData meshData)
+        {
+            var uniquePoints = new Dictionary<Vector2Int, Vector2>();
+            for (var i = 0; i < meshData.Triangles.Length; i += 3)
+            {
+                var a = meshData.Vertices[meshData.Triangles[i]];
+                var b = meshData.Vertices[meshData.Triangles[i + 1]];
+                var c = meshData.Vertices[meshData.Triangles[i + 2]];
+                if (AreAllVerticesAtHeight(a, b, c, 0f) || AreAllVerticesAtHeight(a, b, c, -DefaultSettings.Depth))
                 {
                     continue;
                 }
 
-                uniquePoints.Add(new Vector2Int(
-                    Mathf.RoundToInt(vertex.x * 1000f),
-                    Mathf.RoundToInt(vertex.z * 1000f)));
+                AddIfAtTopHeight(a, uniquePoints);
+                AddIfAtTopHeight(b, uniquePoints);
+                AddIfAtTopHeight(c, uniquePoints);
             }
 
-            return uniquePoints.Count;
+            return new List<Vector2>(uniquePoints.Values);
         }
 
-        private static Bounds GetTopBounds(IslandMeshData meshData)
+        private static int CountUniqueVerticesAtHeight(IslandMeshData meshData, float height)
         {
-            var hasTopVertex = false;
-            var bounds = default(Bounds);
+            return GetUniqueVerticesAtHeight(meshData, height).Count;
+        }
+
+        private static List<Vector2> GetUniqueVerticesAtHeight(IslandMeshData meshData, float height)
+        {
+            var uniquePoints = new Dictionary<Vector2Int, Vector2>();
             for (var i = 0; i < meshData.Vertices.Length; i++)
             {
                 var vertex = meshData.Vertices[i];
-                if (Mathf.Abs(vertex.y) > 0.0001f)
+                if (Mathf.Abs(vertex.y - height) > HeightTolerance)
                 {
                     continue;
                 }
 
-                if (!hasTopVertex)
-                {
-                    bounds = new Bounds(vertex, Vector3.zero);
-                    hasTopVertex = true;
-                }
-                else
-                {
-                    bounds.Encapsulate(vertex);
-                }
+                var point = new Vector2(vertex.x, vertex.z);
+                uniquePoints[ToQuantizedKey(point)] = point;
             }
 
-            Assert.That(hasTopVertex, Is.True, "Expected at least one top-surface vertex.");
-            return bounds;
+            return new List<Vector2>(uniquePoints.Values);
         }
 
-        private static float GetMaxXBelowHeight(IslandMeshData meshData, float maxHeight)
+        private static int CountTopBoundaryVertices(IslandMeshData meshData, IReadOnlyList<Vector2> polygon)
         {
-            var bestX = float.MinValue;
-            for (var i = 0; i < meshData.Vertices.Length; i++)
+            var count = 0;
+            foreach (var vertex in GetUniqueVerticesAtHeight(meshData, 0f))
             {
-                var vertex = meshData.Vertices[i];
-                if (vertex.y >= maxHeight)
+                if (DistanceToPolygonBoundary(vertex, polygon) > BoundaryTolerance)
                 {
                     continue;
                 }
 
-                if (vertex.x > bestX)
-                {
-                    bestX = vertex.x;
-                }
+                count++;
             }
 
-            Assert.That(bestX, Is.GreaterThan(float.MinValue));
-            return bestX;
+            return count;
         }
 
-        private static float GetLargestInnerTopX(IslandMeshData meshData)
+        private static int CountTrianglesAtHeight(IslandMeshData meshData, float height)
         {
-            var topBounds = GetTopBounds(meshData);
-            var bestInnerX = float.MinValue;
-            for (var i = 0; i < meshData.Vertices.Length; i++)
+            var count = 0;
+            for (var i = 0; i < meshData.Triangles.Length; i += 3)
             {
-                var vertex = meshData.Vertices[i];
-                if (Mathf.Abs(vertex.y) > 0.0001f || vertex.x >= topBounds.max.x - 0.05f)
+                var a = meshData.Vertices[meshData.Triangles[i]];
+                var b = meshData.Vertices[meshData.Triangles[i + 1]];
+                var c = meshData.Vertices[meshData.Triangles[i + 2]];
+                if (AreAllVerticesAtHeight(a, b, c, height))
                 {
-                    continue;
-                }
-
-                if (vertex.x > bestInnerX)
-                {
-                    bestInnerX = vertex.x;
+                    count++;
                 }
             }
 
-            Assert.That(bestInnerX, Is.GreaterThan(float.MinValue));
-            return bestInnerX;
+            return count;
+        }
+
+        private static HashSet<int> GetRoundedHeights(IslandMeshData meshData)
+        {
+            var heights = new HashSet<int>();
+            for (var i = 0; i < meshData.Vertices.Length; i++)
+            {
+                heights.Add(Mathf.RoundToInt(meshData.Vertices[i].y * 1000f));
+            }
+
+            return heights;
+        }
+
+        private static float DistanceToPolygonBoundary(Vector2 point, IReadOnlyList<Vector2> polygon)
+        {
+            var minDistance = float.MaxValue;
+            for (var i = 0; i < polygon.Count; i++)
+            {
+                var distance = DistancePointToSegment(point, polygon[i], polygon[(i + 1) % polygon.Count]);
+                if (distance < minDistance)
+                {
+                    minDistance = distance;
+                }
+            }
+
+            return minDistance;
+        }
+
+        private static float DistancePointToSegment(Vector2 point, Vector2 start, Vector2 end)
+        {
+            var segment = end - start;
+            if (segment.sqrMagnitude <= Mathf.Epsilon)
+            {
+                return Vector2.Distance(point, start);
+            }
+
+            var t = Vector2.Dot(point - start, segment) / segment.sqrMagnitude;
+            t = Mathf.Clamp01(t);
+            return Vector2.Distance(point, start + (segment * t));
+        }
+
+        private static bool AreAllVerticesAtHeight(Vector3 a, Vector3 b, Vector3 c, float height)
+        {
+            return Mathf.Abs(a.y - height) <= HeightTolerance &&
+                   Mathf.Abs(b.y - height) <= HeightTolerance &&
+                   Mathf.Abs(c.y - height) <= HeightTolerance;
+        }
+
+        private static void AddIfAtTopHeight(Vector3 vertex, IDictionary<Vector2Int, Vector2> uniquePoints)
+        {
+            if (Mathf.Abs(vertex.y) > HeightTolerance)
+            {
+                return;
+            }
+
+            var point = new Vector2(vertex.x, vertex.z);
+            uniquePoints[ToQuantizedKey(point)] = point;
+        }
+
+        private static Vector2Int ToQuantizedKey(Vector2 point)
+        {
+            return new Vector2Int(
+                Mathf.RoundToInt(point.x * 1000f),
+                Mathf.RoundToInt(point.y * 1000f));
         }
     }
 }
-

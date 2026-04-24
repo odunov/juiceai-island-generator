@@ -1,0 +1,502 @@
+Version 0.1 Goal
+
+Build a playable slice where the player can:
+
+Start at a simple home island → choose/start an expedition island → gather resources → fight enemies → complete a basic objective → extract → upgrade something at base → repeat.
+
+Everything should be primitive, readable, and juicy.
+
+0.1 Deliverables
+1. Player Character Prototype
+
+Use a primitive character body.
+
+Recommended:
+
+capsule, cylinder, or simple low-poly placeholder
+clear facing direction
+floating weapon rig around the player
+top-down/isometric readable movement
+basic health
+basic movement speed
+basic hit feedback
+
+The player does not need a full character model yet.
+
+Player movement
+
+Deliverables:
+
+WASD movement
+mouse aim or auto-aim
+dash or short evade
+damage intake
+death/restart state
+
+For 0.1, I’d probably use auto-aim with optional mouse direction later. Survivorlike gameplay benefits from keeping movement and positioning as the main action.
+
+2. Floating Weapon System
+
+This is one of the most important prototype features because it can define the game’s identity early.
+
+Think:
+
+Nier Automata pod
+gacha companion weapons
+magical orbiting armaments
+Albion-like weapon identity, but detached from full character animation complexity
+0.1 weapon deliverables
+
+Start with two weapons.
+
+Weapon A: orbiting melee blade
+floats near the player
+idles with slight bob/rotation
+lunges/slashes toward nearby enemies
+returns to idle position
+has cooldown
+plays hit VFX/SFX
+Weapon B: ranged bolt weapon
+floats on opposite side or behind player
+aims at nearest target
+fires projectile
+recoils procedurally
+projectile has trail/VFX
+impact sound/VFX
+
+This gives you both close-range and ranged combat tests.
+
+Weapon animation approach
+
+Use simple keyframed + procedural animation:
+
+keyframed attack arc/lunge
+procedural idle bob
+procedural follow smoothing
+procedural recoil
+squash/scale pulse on attack
+slight overshoot when returning to idle
+
+This is perfect for primitive visuals because the motion sells the weapon.
+
+3. Enemy Prototype
+
+Use simple primitives.
+
+Enemy types for 0.1
+
+Only make two enemies.
+
+Chaser
+moves directly toward player
+contact damage
+simple attack cooldown
+knockback when hit
+Spitter / Ranged Enemy
+keeps distance
+fires slow projectile
+forces movement
+weaker health
+
+That’s enough for early combat variety.
+
+Enemy juice deliverables
+spawn pop-in or rise-from-ground effect
+squash/stretch on movement or attack
+flash on hit
+knockback
+death burst
+simple death sound
+resource drop
+
+No complex AI yet.
+
+4. Island Expedition Loop
+
+This is where your curve-based island tool becomes central.
+
+0.1 island requirements
+
+One generated or manually created island with:
+
+walkable ground mesh
+edge boundary/water/void
+resource nodes
+enemy spawn points
+one objective location
+extraction point
+
+The island can be ugly. The important part is that it supports the loop.
+
+Run structure
+
+A single run should go like this:
+
+Player spawns on island.
+Resources appear around island.
+Enemies spawn gradually.
+Player gathers resources and fights.
+Player completes one objective.
+Extraction activates.
+Player extracts and returns to base.
+5. Gathering System
+
+Keep gathering extremely simple.
+
+0.1 resources
+
+Use only three resources:
+
+Wood
+Stone
+Essence / Core / Relic Dust
+
+Wood and stone come from basic nodes. Essence comes from enemies or the island objective.
+
+Gathering interaction
+
+Options:
+
+auto-gather when close
+hold key near node
+weapon attacks can damage nodes
+
+For this type of game, I’d start with:
+
+Weapons can damage resource nodes.
+
+That keeps gathering inside the same action language as combat.
+
+Resource node deliverables
+tree/rock/crystal primitive
+health value
+hit reaction
+break VFX
+drop pickup
+pickup magnetism
+pickup sound
+
+Pickup magnetism is important. It instantly makes the game feel better.
+
+6. Objective System
+
+Keep this dead simple.
+
+0.1 objective
+
+Use one objective:
+
+Destroy the Island Core / Nest / Corrupted Shrine.
+
+When destroyed:
+
+enemies briefly intensify
+extraction point activates
+player can leave
+
+This gives the run a shape instead of becoming aimless grinding.
+
+Optional risk/reward
+
+After extraction opens:
+
+leave immediately with current resources
+stay longer for increased enemy pressure and more drops
+
+For 0.1, even a simple timer works:
+
+Every 30 seconds after objective completion, enemy spawn rate increases.
+
+7. Extraction
+
+Deliverables:
+
+extraction zone appears after objective
+player stands in it for 3 seconds
+extraction progress bar/circle
+taking damage interrupts extraction, optional
+returns player to base screen/island
+
+This gives the expedition a satisfying endpoint.
+
+8. Home Island / Base Layer
+
+This should be very small in 0.1.
+
+Not freeform building yet.
+
+Use your manually drawn island idea as the persistent base island, but keep placement preset.
+
+0.1 base deliverables
+
+A home island with 3 facility slots:
+
+Facility	Function
+Workshop	upgrade weapon damage
+Training Yard	upgrade player health or movement
+Dock / Map Table	start expedition
+
+Each facility can be a primitive block with a label.
+
+Building upgrades
+
+Each facility has one upgrade path.
+
+Example:
+
+Workshop
+Level 1: +10% weapon damage
+Level 2: unlock second weapon
+Level 3: faster weapon cooldown
+Training Yard
+Level 1: +10 max HP
+Level 2: +5% move speed
+Level 3: dash cooldown reduction
+Dock / Map Table
+Level 1: basic island
+Level 2: harder island modifier
+Level 3: better resource rewards
+
+For 0.1, only Level 1 upgrades need to work.
+
+9. Progression
+
+The 0.1 progression should be tiny but real.
+
+Deliverables
+resources persist after extraction
+spend resources at facilities
+upgrades affect next run
+death loses expedition resources, or maybe only some of them
+
+I’d start forgiving:
+
+If the player dies, they keep 30–50% of gathered resources.
+
+Do not make it harsh yet. You want testing to stay fast.
+
+10. Animation / Game Juice Fundamentals
+
+This should be a core deliverable, not polish.
+
+Since visuals are primitive, motion and feedback carry the game.
+
+Player juice
+acceleration/deceleration smoothing
+small body tilt toward movement
+squash/stretch on dash
+damage flash
+hit stop when taking heavy hit
+low health pulse, optional
+Weapon juice
+idle bob
+attack anticipation
+fast strike
+overshoot return
+recoil
+cooldown glow or pulse
+impact freeze for a few frames
+Enemy juice
+spawn bounce
+attack windup
+hit flash
+knockback
+death pop
+resource burst
+Camera juice
+subtle follow smoothing
+tiny shake on heavy hits
+tiny shake on objective destruction
+slight zoom/pulse on extraction or level complete
+
+Don’t overdo camera shake. Small is better.
+
+11. VFX
+
+Keep VFX primitive too.
+
+Required 0.1 VFX
+weapon slash arc
+projectile trail
+projectile impact
+enemy hit spark
+enemy death burst
+resource node break burst
+pickup magnet trail
+extraction zone effect
+objective destruction effect
+
+Use simple particles, meshes, billboards, and color pulses.
+
+No need for fancy shaders yet, except maybe:
+
+unlit additive particles
+simple dissolve/fade
+ground decal circle
+slash mesh with fading alpha
+12. SFX
+
+SFX matters a lot for this prototype.
+
+Required 0.1 SFX
+weapon swing
+weapon hit
+projectile fire
+projectile impact
+enemy hurt
+enemy death
+resource hit
+resource break
+pickup
+upgrade purchased
+extraction start
+extraction complete
+player damage
+
+Even placeholder SFX from generated/free libraries are fine. The important thing is that every action has feedback.
+
+13. UI
+
+Keep it minimal.
+
+Expedition UI
+health bar
+current resources
+objective text
+extraction prompt/progress
+danger level/timer
+Base UI
+resource totals
+facility interaction prompt
+upgrade button
+expedition start button
+
+No inventory screen yet. No item grid. No crafting menu maze.
+
+14. 0.1 Content Scope
+
+This is the full content target:
+
+Player
+1 primitive player
+1 dash
+health/damage/death
+Weapons
+1 melee floating weapon
+1 ranged floating weapon
+Enemies
+1 melee chaser
+1 ranged spitter
+Resources
+wood
+stone
+essence
+Nodes
+tree
+rock
+crystal/core
+Islands
+1 home island
+1 expedition island type
+Facilities
+workshop
+training yard
+dock/map table
+Objective
+destroy island core/nest/shrine
+
+That is enough for a real vertical slice.
+
+15. Explicit Non-Goals for 0.1
+
+Do not add these yet:
+
+full inventory
+hunger/thirst
+armor slots
+loot rarity
+procedural quests
+NPCs
+freeform base building
+complex crafting chains
+farming
+multiple biomes
+boss fights
+skill trees
+equipment durability
+multiplayer
+economy simulation
+
+A lot of these fit the future game. They do not fit 0.1.
+
+Recommended 0.1 Milestones
+Milestone 1: Combat Toy
+
+Goal:
+
+Moving around and killing enemies feels good.
+
+Deliver:
+
+player movement
+one floating weapon
+one enemy
+hit reactions
+enemy death
+basic VFX/SFX
+Milestone 2: Island Run
+
+Goal:
+
+The player can complete a full expedition.
+
+Deliver:
+
+island spawn
+resources
+enemy spawning
+objective
+extraction
+run result screen
+Milestone 3: Base Return
+
+Goal:
+
+Runs feed into persistent progression.
+
+Deliver:
+
+home island
+resource persistence
+one upgrade facility
+upgrade affects next run
+Milestone 4: Juice Pass
+
+Goal:
+
+Primitive visuals still feel satisfying.
+
+Deliver:
+
+better attack animation
+camera shake
+hit stop
+pickup magnetism
+improved VFX/SFX
+UI feedback
+My preferred 0.1 loop
+
+The cleanest first version:
+
+Player starts on home island.
+Walks to dock/map table.
+Starts expedition.
+Spawns on small island.
+Floating weapons auto-attack nearby enemies/resources.
+Player destroys trees/rocks/crystals and fights enemies.
+Player destroys the island core.
+Extraction opens.
+Player extracts.
+Resources are added to base inventory.
+Player upgrades workshop or training yard.
+Next expedition is slightly easier or more rewarding.

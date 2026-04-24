@@ -22,9 +22,9 @@ This project targets stylized, shape-first island dioramas built from clear silh
 ## Current Baseline
 - The current source-of-truth system is `IslandShape` spline authoring feeding generated island meshes in [IslandShape.cs](/C:/ART/GameProjects/islands/Assets/IslandShape/Runtime/IslandShape.cs).
 - The outline is authored as a planar spline locked to local XZ space.
-- The generated mesh is currently top surface plus side walls only.
-- There is no bottom cap.
-- The current look is intentionally simple: one default material, basic mesh output, no beach layering, no cliff stratification, no water treatment, no shoreline foam, and no dressing system yet.
+- The generated mesh is currently a simple closed extrusion: the drawn top surface is refined into an evenly distributed constrained triangulation, extruded straight down to a flat bottom, and connected by vertical side walls.
+- There are no terrace, coast-band, or edge-zone passes in the current generator.
+- The current look is intentionally simple: one triplanar checker default island material, basic mesh output, no beach layering, no cliff stratification, no water treatment, no shoreline foam, and no dressing system yet.
 - This is good. It means the next visual steps can build on a clear base instead of fighting old art decisions.
 
 ## Production Breakdown

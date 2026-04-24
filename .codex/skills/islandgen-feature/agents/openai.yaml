@@ -1,0 +1,4 @@
+interface:
+  display_name: "IslandGen Feature"
+  short_description: "Add coast-first island generator features"
+  default_prompt: "Use $islandgen-feature to add or extend an island generator subsystem in this repo."
